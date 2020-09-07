@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# This deploy script will make sadness happen.
+# - First it will create some certificates in a temporary directory
+# - Then it will render the template with base64 encoded versions of said certs
+# - Then it will submit them to kubernetes and things will maybe happen!
+
+set -o errexit
+set -o pipefail
+
+CERT_DIR=$(mktemp -d)
+
+basedir="$(dirname "$0")"
+projectroot="$(dirname "$0")/../../"
+
+echo "==> Creating certificates"
+"$projectroot/hack/scripts/generate-legacy-keys" "$CERT_DIR"
+
+echo "==> Creating Namespace"
+kubectl create namespace legacy-demo
+
+echo "==> Creating Secret"
+kubectl -n legacy-demo create secret tls admission-controller-tls \
+    --cert "${CERT_DIR}/webhook-server-tls.crt" \
+    --key "${CERT_DIR}/webhook-server-tls.key"
+
+echo "==> Rendering deployment template"
+
+B64PEM="$(openssl base64 -A <"${CERT_DIR}/ca.pem")"
+sed -e 's@${CA_PEM_B64}@'"$B64PEM"'@g' <"${basedir}/deployment.yaml.template" \
+    | kubectl create -f -
+
+# No you can't have these certs
+rm -rf "$CERT_DIR"
+
+echo "==> DONE!"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#
+# cluster-bootstrap prepares a Kubernetes Cluster for the demo application.
+# This mostly just involves ensuring that cert-manager is available.

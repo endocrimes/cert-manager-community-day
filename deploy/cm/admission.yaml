@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admission-controller
+  namespace: cm-demo
+  labels:
+    app: admission-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admission-controller
+  template:
+    metadata:
+      labels:
+        app: admission-controller
+    spec:
+      containers:
+      - name: server
+        image: quay.io/endocrimes/cert-manager-community-day:latest
+        imagePullPolicy: Always
+        resources:
+          limits:
+            cpu: 500m
+            memory: 64Mi
+        ports:
+        - containerPort: 8443
+          name: webhook-api
+        volumeMounts:
+        - name: webhook-tls-certs
+          mountPath: /run/secrets/tls
+          readOnly: true
+      volumes:
+      - name: webhook-tls-certs
+        secret:
+          secretName: webhook-tls-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-controller
+  namespace: cm-demo
+spec:
+  selector:
+    app: admission-controller
+  ports:
+    - port: 443
+      targetPort: webhook-api
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: demo-cm-webhook
+  annotations:
+    cert-manager.io/inject-ca-from: cm-demo/webhook-tls
+webhooks:
+  - name: "pod-policy.internal.terrible.systems"
+    clientConfig:
+      service:
+        name: admission-controller
+        namespace: cm-demo
+        path: "/my-admission-webhook"
+    failurePolicy: Fail
+    rules:
+      - operations: [ "CREATE" ]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: webhook-issuer
+  namespace: cm-demo
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: webhook-tls
+  namespace: cm-demo
+  annotations:
+    cert-manager.io/allow-direct-injection: "true"
+spec:
+  dnsNames:
+  - admission-controller.cm-demo.svc
+  - admission-controller.cm-demo.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: webhook-issuer
+  secretName: webhook-tls-cert

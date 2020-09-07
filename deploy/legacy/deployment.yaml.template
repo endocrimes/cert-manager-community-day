@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admission-controller
+  namespace: legacy-demo
+  labels:
+    app: admission-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admission-controller
+  template:
+    metadata:
+      labels:
+        app: admission-controller
+    spec:
+      containers:
+      - name: server
+        image: quay.io/endocrimes/cert-manager-community-day:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8443
+          name: webhook-api
+        volumeMounts:
+        - name: webhook-tls-certs
+          mountPath: /run/secrets/tls
+          readOnly: true
+      volumes:
+      - name: webhook-tls-certs
+        secret:
+          secretName: admission-controller-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-controller
+  namespace: legacy-demo
+spec:
+  selector:
+    app: admission-controller
+  ports:
+    - port: 443
+      targetPort: webhook-api
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: demo-webhook
+webhooks:
+  - name: "pod-policy.internal.terrible.systems"
+    clientConfig:
+      service:
+        name: admission-controller
+        namespace: legacy-demo
+        path: "/my-admission-webhook"
+      caBundle: ${CA_PEM_B64}
+    failurePolicy: Fail
+    rules:
+      - operations: [ "CREATE" ]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]

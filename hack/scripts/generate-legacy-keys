@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# generate-legacy-keys
+#
+# Generate a (self-signed) CA certificate and a certificate and private key to be used by the webhook demo server.
+# The certificate will be issued for the Common Name (CN) of `admission-controller.legacy-demo.svc`
+
+KEYDIR=${1:-crts}
+
+mkdir -p "$KEYDIR"
+chmod 0700 "$KEYDIR"
+cd "$KEYDIR"
+
+# Generate the CA cert and private key
+openssl req -nodes -new -x509 -keyout ca.key -out ca.crt -subj "/CN=Admission Controller Webhook Demo CA"
+
+openssl x509 -in ca.crt -out ca.pem
+
+# Generate the private key for the webhook server
+openssl genrsa -out webhook-server-tls.key 4096
+
+CN="admission-controller-legacy-demo.svc"
+
+# Generate a Certificate Signing Request (CSR) for the private key, and sign it with the private key of the CA.
+echo "subjectAltName = DNS:admission-controller.legacy-demo.svc" > domain.ext
+openssl req -new -key webhook-server-tls.key \
+  -addext "O=Terrible Systems" \
+  -addext "subjectAltName = DNS:$CN" \
+  -addext 'certificatePolicies = 1.2.3.4' | \
+  openssl x509 -req -CA ca.crt -CAkey ca.key -CAcreateserial -out webhook-server-tls.crt -extfile domain.ext
